@@ -1,104 +1,92 @@
-(function() {
-    'use strict';
+(function () {
+  'use strict';
 
-    // Важно: добавить явную регистрацию провайдера
-    Lampa.Parser = function() {
-        this.sites = {
-            // Регистрация провайдера с уникальным именем
-            '4krezka': {
-                url: 'https://4krezka.net',
-                title: '4K Rezka',
-                search: true
-            }
-        };
+  var host = 'https://4krezka.net'; // URL сайта
 
-        this.search = function(params) {
-            return new Promise((resolve) => {
-                Lampa.Activity.push({
-                    url: '',
-                    title: 'Поиск - ' + params.query,
-                    component: '4krezka',
-                    search: params.query,
-                    page: 1
-                });
-            });
-        };
-    };
-
-    // Создаем компонент для Lampa
-    Lampa.Component.add('4krezka', {
-        start: function() {
-            let _this = this;
-            
-            // Обработка поиска или списка
-            this.create = function() {
-                let params = Lampa.Activity.get();
-                let rezka = new RezkaProvider();
-
-                // Если есть поисковый запрос - используем поиск
-                if (params.search) {
-                    rezka.search({query: params.search}).then(_this.build);
-                } 
-                // Иначе загружаем список фильмов
-                else {
-                    rezka.list({page: params.page || 1}).then(_this.build);
-                }
-            };
-
-            this.build = function(data) {
-                let items = data.results || [];
-                let html = $('<div class="category-full"></div>');
-                
-                items.forEach(function(element) {
-                    let card = Lampa.Template.get('card', {
-                        title: element.title,
-                        release_year: element.year,
-                        quality: element.quality || '',
-                        poster: element.poster
-                    });
-
-                    // Обработчик клика на карточку
-                    card.on('hover:enter', function() {
-                        Lampa.Activity.push({
-                            url: '',
-                            component: 'full',
-                            id: element.id,
-                            method: '4krezka',
-                            data: element
-                        });
-                    });
-
-                    html.append(card);
-                });
-
-                _this.renderList(html);
-            };
-
-            this.renderList = function(html) {
-                Lampa.Scroll.render().data('_this', _this).addClass('category-full');
-                Lampa.Scroll.append(html);
-            };
-        }
+  function fetchHTML(url, callback, errorCallback) {
+    var net = new Lampa.Reguest();
+    net.timeout(5000);
+    net.native(url, function (data) {
+      callback(data);
+    }, function (error) {
+      console.error('Ошибка при получении данных:', error);
+      if (errorCallback) errorCallback(error);
     });
+  }
 
-    // Основной провайдер 
-    class RezkaProvider {
-        constructor() {
-            this.network = new Lampa.Reguest();
-            this.host = 'https://4krezka.net';
-        }
-
-        // Методы list, search, get остаются прежними 
-        // (код из предыдущего ответа)
+  function parseHTMLForResults(html) {
+    var results = [];
+    try {
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(html, 'text/html');
+      var items = doc.querySelectorAll('.poster');
+      items.forEach(function (item) {
+        var title = item.querySelector('.poster__title')?.textContent || 'Без названия';
+        var url = host + (item.querySelector('a')?.getAttribute('href') || '');
+        var poster = host + (item.querySelector('img')?.getAttribute('src') || '');
+        results.push({
+          title: title,
+          url: url,
+          poster: poster
+        });
+      });
+    } catch (e) {
+      console.error('Ошибка при парсинге HTML:', e);
     }
+    return results;
+  }
 
-    // Регистрация плагина в Lampa
-    Lampa.Plugins.add({
-        name: '4krezka',
-        type: 'video',
-        version: '1.0',
-        create: function() {
-            return new RezkaProvider();
-        }
+  function parseHTMLForStreams(html) {
+    var streams = [];
+    try {
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(html, 'text/html');
+      var iframe = doc.querySelector('iframe');
+      if (iframe) {
+        streams.push({
+          title: 'Основной поток',
+          url: iframe.getAttribute('src')
+        });
+      }
+    } catch (e) {
+      console.error('Ошибка при парсинге потоков:', e);
+    }
+    return streams;
+  }
+
+  function startPlugin() {
+    Lampa.Source.add({
+      title: '4KRezka', // Имя источника
+      icon: 'https://4krezka.net/favicon.ico', // Иконка
+      link: host, // Ссылка на сайт
+      description: 'Поиск фильмов и сериалов с 4KRezka', // Описание источника
+
+      search: function (query, call) {
+        var searchUrl = host + '/index.php?do=search&subaction=search&story=' + encodeURIComponent(query);
+        fetchHTML(searchUrl, function (html) {
+          var results = parseHTMLForResults(html);
+          call(results);
+        }, function () {
+          call([]);
+        });
+      },
+
+      fetch: function (item, call) {
+        fetchHTML(item.url, function (html) {
+          var streams = parseHTMLForStreams(html);
+          call(streams);
+        }, function () {
+          call([]);
+        });
+      }
     });
+
+    console.log('Плагин 4KRezka успешно подключен!');
+  }
+
+  if (typeof Lampa !== 'undefined') {
+    startPlugin();
+  } else {
+    console.error('LAMPA не загружена');
+  }
 })();
