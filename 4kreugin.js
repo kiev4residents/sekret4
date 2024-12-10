@@ -55,11 +55,12 @@
   }
 
   function startPlugin() {
-    Lampa.Source.add({
+    Lampa.Plugins.add({
+      id: '4krezka',
       title: '4KRezka',
       icon: 'https://4krezka.net/favicon.ico',
 
-      search: function(query, call) {
+      onSearch: function(query, call) {
         var searchUrl = host + '/index.php?do=search&subaction=search&story=' + encodeURIComponent(query);
         fetchHTML(searchUrl, function(html) {
           var results = parseHTMLForResults(html);
@@ -69,7 +70,7 @@
         });
       },
 
-      fetch: function(item, call) {
+      onFetch: function(item, call) {
         fetchHTML(item.url, function(html) {
           var streams = parseHTMLForStreams(html);
           call(streams);
